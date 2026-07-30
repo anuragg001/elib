@@ -4,6 +4,7 @@ import path from "node:path";
 import createHttpError from "http-errors";
 import bookModel from "./bookModel";
 import fs from "fs";
+import { AuthRequest } from "../middlewares/authenticate";
 
 
 const createBook = async (req: Request, res: Response, next: NextFunction) => {
@@ -41,11 +42,12 @@ const createBook = async (req: Request, res: Response, next: NextFunction) => {
         console.log(uploadResult);
         console.log(bookFileUploadResult);
 
+        const _req = req as AuthRequest; // typecast req to AuthRequest to access userId
         // now we have to make the changes in db so we can use the url of the file and store it in the db 
         const newBook = await bookModel.create({
             title: req.body.title,
             genre: req.body.genre,
-            author: "6a6b265aa37f118caf9e26ab",
+            author: _req.userId,
             coverImage: uploadResult.secure_url,
             file: bookFileUploadResult.secure_url
         })
