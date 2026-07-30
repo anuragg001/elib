@@ -2,6 +2,9 @@ import { NextFunction, Request, Response } from "express";
 import cloudinary from "../config/cloudinary";
 import path from "node:path";
 import createHttpError from "http-errors";
+import bookModel from "./bookModel";
+import fs from "fs";
+
 
 const createBook = async (req: Request, res: Response, next: NextFunction) => {
     //get the data  i.e formData  (we already handled by multer in the router)
@@ -39,8 +42,20 @@ const createBook = async (req: Request, res: Response, next: NextFunction) => {
         console.log(bookFileUploadResult);
 
         // now we have to make the changes in db so we can use the url of the file and store it in the db 
-        
+        const newBook = await bookModel.create({
+            title: req.body.title,
+            genre: req.body.genre,
+            author: "6a6b265aa37f118caf9e26ab",
+            coverImage: uploadResult.secure_url,
+            file: bookFileUploadResult.secure_url
+        })
 
+
+        //now delete temp files taht is bneen locally created 
+        await fs.promises.unlink(filePath);
+        await fs.promises.unlink(bookFilePath);
+
+        res.status(201).json({ id: newBook._id, message: "Book created successfully"  });
 
     } catch (error) {
         const httpError = createHttpError(500, "Failed to upload files to Cloudinary");
@@ -49,7 +64,6 @@ const createBook = async (req: Request, res: Response, next: NextFunction) => {
 
 
 
-    res.json({ message: "Book created successfully" });
 }
 
-export { createBook };
+export { createBook }; 
