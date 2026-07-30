@@ -6,7 +6,7 @@ const createBook = async (req: Request, res: Response, next: NextFunction) => {
 
 
 
-
+    // console.log("files",req.files ); //form data
 
     res.json({ message: "Book created successfully" });
 }
