@@ -7,6 +7,16 @@ import fs from "fs";
 import { AuthRequest } from "../middlewares/authenticate";
 
 
+const getCloudinaryPublicId = (url: string) => {
+    const urlParts = url.split('/');
+    const folderName = urlParts.at(-2);
+    const fileName = urlParts.at(-1) ?? "";
+    const fileBaseName = fileName.split('.').slice(0, -1).join('.');
+
+    return `${folderName}/${fileBaseName}`;
+}
+
+
 const createBook = async (req: Request, res: Response, next: NextFunction) => {
     //get the data  i.e formData  (we already handled by multer in the router)
 
@@ -87,6 +97,9 @@ const updateBook = async (req: Request, res: Response, next: NextFunction) => {
             return next(createHttpError(403, "You are not authorized to update this book"));
         }
 
+        const oldCoverImage = book.coverImage;
+        const oldFile = book.file;
+
 
         //checck if image filed exist 
         const files = (req.files as { [fieldname: string]: Express.Multer.File[] } | undefined) ?? {};
@@ -145,6 +158,16 @@ const updateBook = async (req: Request, res: Response, next: NextFunction) => {
             }
         )
 
+        const deletionResults = await Promise.allSettled([
+            completeCoverImage ? cloudinary.uploader.destroy(getCloudinaryPublicId(oldCoverImage)) : Promise.resolve(null),
+            completeFileName ? cloudinary.uploader.destroy(getCloudinaryPublicId(oldFile), { resource_type: 'raw' }) : Promise.resolve(null),
+        ]);
+
+        const failedDeletions = deletionResults.filter((result) => result.status === "rejected");
+        if (failedDeletions.length > 0) {
+            console.warn("Some old Cloudinary assets could not be deleted after update.");
+        }
+
         res.json({ message: "Book updated successfully", book: updatedBook });
     } catch (error) {
         const httpError = createHttpError(500, "Failed to update book");
@@ -189,5 +212,53 @@ const getSingleBook = async (req: Request, res: Response, next: NextFunction) =>
 
 }
 
+const deleteBook = async (req: Request, res: Response, next: NextFunction) => {
+    const bookId = req.params.bookId;
 
-export { createBook, updateBook, listBooks, getSingleBook }; 
+    try {
+        const book = await bookModel.findOne({ _id: bookId });
+        if (!book) {
+            const httpError = createHttpError(404, "Book not found");
+            return next(httpError);
+        }
+
+        //checck if the user is the author of the book
+        const _req = req as AuthRequest;
+        if (book.author.toString() !== _req.userId) {
+            const httpError = createHttpError(403, "You are not authorized to delete this book");
+            return next(httpError);
+        }
+
+
+        //https://res.cloudinary.com/nxweygya/image/upload/v1785432441/book-covers/zemxw1rryzhzvye4b4qp.jpg
+        // in the form of this we need to get the book id 
+
+        const coverFileSplits = book.coverImage.split('/');
+        const coverImagePublicId = coverFileSplits.at(-2) + '/' + (coverFileSplits.at(-1)?.split('.').at(-2));
+        // console.log(coverImagePublicId);
+
+
+        const bookFileSplits = book.file.split('/');
+        const bookFilePublicId = bookFileSplits.at(-2) + '/' + bookFileSplits.at(-1);
+        // console.log(bookFilePublicId);
+
+        try {
+            await cloudinary.uploader.destroy(coverImagePublicId);
+            await cloudinary.uploader.destroy(bookFilePublicId, { resource_type: 'raw' });
+
+            await bookModel.deleteOne({ _id: bookId }); // from our deleteBook
+
+            res.status(204).json({ id: bookId, message: "Book deleted successfully" });
+        } catch (error) {
+            const httpError = createHttpError(500, "Failed to delete cover image from Cloudinary");
+            return next(httpError);
+        }
+
+
+    } catch (error) {
+        const httpError = createHttpError(500, "Failed to delete book");
+        return next(httpError);
+    }
+}
+
+export { createBook, updateBook, listBooks, getSingleBook, deleteBook }; 
